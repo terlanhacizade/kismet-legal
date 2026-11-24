@@ -1,0 +1,315 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Kismet · Reader panel</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js"></script>
+<style>
+  :root { --bg:#070507; --panel:#140d0f; --rose:#e0a99a; --light:#efc3b5; --text:#f3e6e3; --muted:#b39a98; --faint:#8a6f6c; --ok:#5fd38a; --bad:#f09595; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+  h1,h2,h3 { font-family: "New York", Georgia, serif; font-weight:600; color:var(--light); margin:0 0 8px; }
+  button { font:inherit; border:none; border-radius:999px; padding:9px 18px; cursor:pointer; background:rgba(224,169,154,.12); color:var(--text); }
+  button.gold { background:linear-gradient(#f6cfc2,#d4968a); color:#1c1214; font-weight:600; }
+  button.bad { color:var(--bad); background:rgba(240,149,149,.1); }
+  input, textarea, select { font:inherit; color:var(--text); background:rgba(224,169,154,.07); border:1px solid rgba(224,169,154,.25); border-radius:14px; padding:10px 12px; width:100%; }
+  textarea { min-height:140px; resize:vertical; }
+  .wrap { max-width:1200px; margin:0 auto; padding:18px; }
+  .top { display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:16px; }
+  .top .sp { flex:1; }
+  .pill { display:inline-flex; align-items:center; gap:7px; padding:6px 12px; border-radius:999px; background:rgba(224,169,154,.08); font-size:13px; color:var(--muted); }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--faint); }
+  .dot.on { background:var(--ok); box-shadow:0 0 8px var(--ok); }
+  .grid { display:grid; grid-template-columns: 320px 1fr; gap:16px; }
+  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } }
+  .card { background:var(--panel); border:1px solid rgba(224,169,154,.15); border-radius:20px; padding:14px; }
+  .list .item { padding:10px 12px; border-radius:14px; cursor:pointer; margin-bottom:6px; background:rgba(224,169,154,.05); }
+  .list .item.sel { outline:1.5px solid var(--light); }
+  .list .item small { color:var(--faint); display:block; }
+  .tag { font-size:11px; padding:2px 8px; border-radius:999px; background:var(--rose); color:#1c1214; font-weight:600; }
+  .tag.ring { background:var(--ok); color:#06200f; animation:pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity:.4 } }
+  .msgs { height:52vh; overflow-y:auto; padding:6px; display:flex; flex-direction:column; gap:8px; }
+  .m { max-width:75%; padding:9px 13px; border-radius:18px; }
+  .m.user { background:rgba(224,169,154,.1); align-self:flex-start; }
+  .m.reader { background:linear-gradient(#f3c6b8,#d4968a); color:#1c1214; align-self:flex-end; }
+  .m.system { align-self:center; font-size:12px; color:var(--faint); background:none; }
+  .m small { display:block; font-size:11px; opacity:.7; margin-top:3px; cursor:pointer; }
+  .m img { max-width:220px; border-radius:12px; display:block; }
+  .row { display:flex; gap:8px; margin-top:10px; }
+  .muted { color:var(--muted); font-size:13px; }
+  .photos img { width:150px; height:150px; object-fit:cover; border-radius:14px; margin:4px; }
+  .hidden { display:none !important; }
+  .err { color:var(--bad); font-size:13px; min-height:18px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <!-- Sign in -->
+  <div id="login" class="card" style="max-width:420px;margin:60px auto;">
+    <h1>Kismet · Reader panel</h1>
+    <p class="muted">Sign in with your fortune teller account.</p>
+    <div id="cfg" class="hidden">
+      <input id="url" placeholder="Supabase Project URL (https://....supabase.co)" style="margin-bottom:8px">
+      <input id="anon" placeholder="Supabase anon public key" style="margin-bottom:8px">
+    </div>
+    <input id="email" placeholder="Email" type="email" style="margin-bottom:8px">
+    <input id="pass" placeholder="Password" type="password" style="margin-bottom:8px">
+    <div class="err" id="lerr"></div>
+    <div class="row"><button class="gold" id="signin">Sign in</button><button id="signup">Create account</button></div>
+    <p class="muted" id="notreader"></p>
+  </div>
+
+  <!-- Panel -->
+  <div id="panel" class="hidden">
+    <div class="top">
+      <h1 style="margin:0">Fortune Teller</h1>
+      <span class="pill"><span class="dot" id="odot"></span><span id="otext">Offline</span></span>
+      <button class="gold" id="toggle">Go online</button>
+      <label class="pill">I write in
+        <select id="lang" style="width:auto;padding:4px 8px;margin-left:6px">
+          <option value="tr">Turkish</option><option value="az">Azerbaijani</option><option value="ru">Russian</option>
+          <option value="en">English</option>
+        </select>
+      </label>
+      <span class="sp"></span>
+      <button id="logout">Sign out</button>
+    </div>
+
+    <div class="grid">
+      <div>
+        <div class="card list">
+          <h3>Live chats and calls</h3>
+          <div id="live"></div>
+          <p class="muted" id="liveempty">Nobody is waiting.</p>
+        </div>
+        <div class="card list" style="margin-top:16px">
+          <h3>Sent cups and cards</h3>
+          <div id="written"></div>
+          <p class="muted" id="wempty">No readings waiting.</p>
+        </div>
+      </div>
+
+      <div class="card" id="detail">
+        <p class="muted">Choose a chat, a call or a sent reading on the left.</p>
+      </div>
+    </div>
+    <p class="muted" style="margin-top:14px">Clients see you only as “Fortune Teller”, a hooded figure. Never share your name, phone or payment details in chat.</p>
+  </div>
+</div>
+
+<script>
+// ── Settings: paste your Supabase Project URL and anon public key here (or type them on the sign-in screen once) ──
+const SUPABASE_URL = "https://kwqiuarpjksyldcwoeki.supabase.co";
+const SUPABASE_ANON_KEY = "sb_publishable_hdERTzW4vc1JBWvbccavvQ_1Fweex-S";
+
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+let url = SUPABASE_URL || localStorage.getItem("k_url") || "";
+let anon = SUPABASE_ANON_KEY || localStorage.getItem("k_anon") || "";
+if (!url || !anon) $("cfg").classList.remove("hidden");
+$("url").value = url; $("anon").value = anon;
+
+let sb = null, me = null, reader = null, current = null, channel = null, tickTimer = null, beat = null;
+
+function client() {
+  url = url || $("url").value.trim(); anon = anon || $("anon").value.trim();
+  if (!url || !anon) { $("lerr").textContent = "Enter the Supabase URL and anon key."; return null; }
+  localStorage.setItem("k_url", url); localStorage.setItem("k_anon", anon);
+  sb = sb || supabase.createClient(url, anon);
+  return sb;
+}
+
+$("signin").onclick = async () => {
+  if (!client()) return;
+  const { error } = await sb.auth.signInWithPassword({ email: $("email").value.trim(), password: $("pass").value });
+  if (error) { $("lerr").textContent = error.message; return; }
+  start();
+};
+$("signup").onclick = async () => {
+  if (!client()) return;
+  const { error } = await sb.auth.signUp({ email: $("email").value.trim(), password: $("pass").value });
+  $("lerr").textContent = error ? error.message : "Account created. Confirm your email if asked, then sign in.";
+};
+$("logout").onclick = async () => { await setOnline(false); await sb.auth.signOut(); location.reload(); };
+
+async function start() {
+  const { data: { user } } = await sb.auth.getUser();
+  if (!user) return;
+  me = user;
+  const { data } = await sb.from("readers").select("*").eq("user_id", me.id).maybeSingle();
+  if (!data) {
+    $("notreader").innerHTML = "This account is not a reader yet. Ask the app owner to run in Supabase → SQL Editor:<br><code>insert into public.readers (user_id, name, language) values ('" + me.id + "', 'Fortune Teller', 'tr');</code>";
+    return;
+  }
+  reader = data;
+  $("login").classList.add("hidden"); $("panel").classList.remove("hidden");
+  $("lang").value = reader.language || "tr";
+  showOnline(reader.online);
+  sb.channel("panel")
+    .on("postgres_changes", { event: "*", schema: "public", table: "sessions" }, () => loadLists())
+    .subscribe();
+  loadLists();
+  setInterval(loadLists, 20000);
+  beat = setInterval(() => reader.online && sb.from("readers").update({ last_seen: new Date().toISOString() }).eq("user_id", me.id), 30000);
+}
+
+function showOnline(on) {
+  $("odot").classList.toggle("on", on);
+  $("otext").textContent = on ? "Online · clients can reach you" : "Offline";
+  $("toggle").textContent = on ? "Go offline" : "Go online";
+}
+async function setOnline(on) {
+  if (!reader) return;
+  await sb.from("readers").update({ online: on, last_seen: new Date().toISOString() }).eq("user_id", me.id);
+  reader.online = on; showOnline(on);
+}
+$("toggle").onclick = () => setOnline(!reader.online);
+$("lang").onchange = async () => { await sb.from("readers").update({ language: $("lang").value }).eq("user_id", me.id); };
+window.addEventListener("beforeunload", () => { if (reader?.online) navigator.sendBeacon && setOnline(false); });
+
+const kindName = { chat: "Chat", call: "Voice call", written_cup: "Coffee cup", written_tarot: "Tarot cards" };
+const ago = (t) => { const s = Math.round((Date.now() - new Date(t)) / 1000); return s < 60 ? s + " s ago" : s < 3600 ? Math.round(s / 60) + " min ago" : Math.round(s / 3600) + " h ago"; };
+
+async function loadLists() {
+  const { data: live } = await sb.from("sessions").select("*").in("status", ["ringing", "live", "paused"]).in("kind", ["chat", "call"]).order("created_at");
+  const { data: written } = await sb.from("sessions").select("*").eq("status", "waiting").like("kind", "written_%").order("created_at");
+  $("live").innerHTML = (live || []).map(s => `<div class="item ${current?.id === s.id ? "sel" : ""}" data-id="${s.id}">
+      ${kindName[s.kind]} ${s.status === "ringing" ? '<span class="tag ring">CALLING</span>' : s.status === "paused" ? '<span class="tag">PAUSED</span>' : ""}
+      <small>Client ${s.user_id.slice(0, 6)} · ${ago(s.created_at)}</small></div>`).join("");
+  $("liveempty").classList.toggle("hidden", (live || []).length > 0);
+  $("written").innerHTML = (written || []).map(s => `<div class="item ${current?.id === s.id ? "sel" : ""}" data-id="${s.id}">
+      ${kindName[s.kind]} <small>Paid ◆ ${s.price} · ${ago(s.created_at)} · answer within 1 hour</small></div>`).join("");
+  $("wempty").classList.toggle("hidden", (written || []).length > 0);
+  const all = [...(live || []), ...(written || [])];
+  document.querySelectorAll(".list .item").forEach(el => el.onclick = () => open(all.find(s => s.id === el.dataset.id)));
+  if (current && !all.find(s => s.id === current.id) && current.kind.startsWith("written") === false) {
+    // the session ended on the client side
+    $("detail").insertAdjacentHTML("afterbegin", '<p class="muted">This session has ended.</p>');
+    stopLive();
+    current = null;
+  }
+}
+
+function stopLive() { if (channel) { sb.removeChannel(channel); channel = null; } clearInterval(tickTimer); }
+
+async function open(s) {
+  stopLive();
+  current = s;
+  loadLists();
+  if (s.kind.startsWith("written")) return openWritten(s);
+  const d = $("detail");
+  d.innerHTML = `<div class="top" style="margin-bottom:8px"><h2 style="margin:0">${kindName[s.kind]}</h2>
+      <span class="pill" id="meter">…</span><span class="sp"></span>
+      ${s.status === "ringing" ? '<button class="gold" id="answer">Answer</button>' : ""}
+      <button class="bad" id="end">End</button></div>
+    ${s.kind === "call" ? '<p class="muted">Voice audio connects through the call service (Agora) once it is set up. You can also write here during the call.</p>' : ""}
+    <div class="msgs" id="msgs"></div>
+    <div class="row"><input id="text" placeholder="Write in your language… it is translated for the client"><button class="gold" id="send">Send</button></div>
+    <div class="row"><input type="file" id="photo" accept="image/*" style="width:auto"><span class="muted">Send a photo</span></div>
+    <div class="err" id="derr"></div>`;
+  $("end").onclick = async () => { await sb.rpc("session_end", { sid: s.id }); stopLive(); loadLists(); $("detail").innerHTML = '<p class="muted">Session ended.</p>'; };
+  if ($("answer")) $("answer").onclick = async () => { await sb.rpc("session_answer", { sid: s.id }); $("answer").remove(); };
+  $("send").onclick = () => sendText(s.id);
+  $("text").onkeydown = (e) => { if (e.key === "Enter") sendText(s.id); };
+  $("photo").onchange = () => sendPhoto(s.id);
+  const { data: msgs } = await sb.from("messages").select("*").eq("session_id", s.id).order("created_at");
+  (msgs || []).forEach(addMsg);
+  channel = sb.channel("s-" + s.id)
+    .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: "session_id=eq." + s.id }, (p) => addMsg(p.new))
+    .subscribe();
+  const tick = async () => {
+    const { data } = await sb.rpc("session_tick", { sid: s.id });
+    if (!data) return;
+    const m = Math.floor(data.elapsed / 60), sec = String(data.elapsed % 60).padStart(2, "0");
+    $("meter") && ($("meter").textContent = `${data.status.toUpperCase()} · ${m}:${sec} · ◆ ${data.crystals_charged} charged`);
+    if (["done", "refunded"].includes(data.status)) { stopLive(); loadLists(); }
+  };
+  tick(); tickTimer = setInterval(tick, 15000);
+}
+
+const shown = new Set();
+async function addMsg(m) {
+  if (shown.has(m.id)) return; shown.add(m.id);
+  const box = $("msgs"); if (!box) return;
+  const el = document.createElement("div");
+  el.className = "m " + m.sender;
+  if (m.kind === "photo" && m.media_path) {
+    const { data } = await sb.storage.from("chat-media").createSignedUrl(m.media_path, 3600);
+    el.innerHTML = `<img src="${esc(data?.signedUrl)}" alt="photo">`;
+  } else if (m.kind === "voice" && m.media_path) {
+    const { data } = await sb.storage.from("chat-media").createSignedUrl(m.media_path, 3600);
+    el.innerHTML = `<audio controls src="${esc(data?.signedUrl)}"></audio><small>Voice message · ${m.seconds || 0} s</small>`;
+  } else if (m.sender === "user" && m.translated) {
+    el.innerHTML = `<span class="t">${esc(m.translated)}</span><small>Translated · show original</small>`;
+    let orig = false;
+    el.querySelector("small").onclick = () => { orig = !orig; el.querySelector(".t").textContent = orig ? m.body : m.translated; el.querySelector("small").textContent = orig ? "Original · show translation" : "Translated · show original"; };
+  } else {
+    el.textContent = m.body;
+  }
+  box.appendChild(el); box.scrollTop = 1e9;
+}
+
+async function sendText(sid) {
+  const t = $("text").value.trim(); if (!t) return;
+  $("text").value = "";
+  const { data, error } = await sb.functions.invoke("chat-send", { body: { session_id: sid, kind: "text", body: t } });
+  if (error) {
+    let why = error.message;
+    try { why = (await error.context.json()).error || why; } catch {}
+    const help = { session_closed: "the session is not live (press Answer, or the client already left)",
+                   forbidden: "this account is not in the readers table", blocked: "the client blocked you", auth: "sign in again" };
+    $("derr").textContent = "Not sent: " + (help[why] || why);
+    $("text").value = t;
+    return;
+  }
+  $("derr").textContent = "";
+  if (data) addMsg(data);
+}
+async function sendPhoto(sid) {
+  const f = $("photo").files[0]; if (!f) return;
+  const path = `reader/${sid}/${Date.now()}.jpg`;
+  const up = await sb.storage.from("chat-media").upload(path, f, { contentType: f.type || "image/jpeg" });
+  if (up.error) { $("derr").textContent = up.error.message; return; }
+  const { error } = await sb.functions.invoke("chat-send", { body: { session_id: sid, kind: "photo", media_path: path } });
+  if (error) $("derr").textContent = "Not sent: " + error.message;
+}
+
+async function openWritten(s) {
+  const det = s.details || {};
+  const photos = [];
+  for (const p of det.photos || []) {
+    const { data } = await sb.storage.from("chat-media").createSignedUrl(p, 3600);
+    if (data?.signedUrl) photos.push(data.signedUrl);
+  }
+  const facts = Object.entries(det).filter(([k]) => k !== "photos").map(([k, v]) => `<div><b>${esc(k)}:</b> ${esc(v)}</div>`).join("");
+  $("detail").innerHTML = `<h2>${kindName[s.kind]}</h2>
+    <p class="muted">Paid ◆ ${s.price} · sent ${ago(s.created_at)}. Please answer within 1 hour.</p>
+    <div style="margin:8px 0">${facts || '<span class="muted">No details were attached.</span>'}</div>
+    <div class="photos">${photos.map(u => `<a href="${esc(u)}" target="_blank"><img src="${esc(u)}" alt="cup photo"></a>`).join("")}</div>
+    <h3 style="margin-top:12px">Your reading</h3>
+    <select id="verdict" style="width:auto;margin-bottom:8px"><option>YES</option><option>NOT YET</option><option>MAYBE</option><option value="">(no short answer)</option></select>
+    <textarea id="reading" placeholder="Write your reading here. It is shown to the client in My readings."></textarea>
+    <div class="row"><button class="gold" id="finish">Send the reading</button><button class="bad" id="refund">I can't read this · refund</button></div>
+    <div class="err" id="werr"></div>`;
+  $("finish").onclick = async () => {
+    const text = $("reading").value.trim();
+    if (text.length < 40) { $("werr").textContent = "Please write a little more (at least a few sentences)."; return; }
+    const { error } = await sb.rpc("finish_written_reading", { sid: s.id, p_verdict: $("verdict").value, p_reading: text });
+    if (error) { $("werr").textContent = error.message; return; }
+    $("detail").innerHTML = '<p class="muted">Sent. The client sees your reading in the app.</p>'; current = null; loadLists();
+  };
+  $("refund").onclick = async () => {
+    if (!confirm("Give the client their crystals back?")) return;
+    const { error } = await sb.rpc("refund_written_reading", { sid: s.id });
+    if (error) { $("werr").textContent = error.message; return; }
+    $("detail").innerHTML = '<p class="muted">Refunded.</p>'; current = null; loadLists();
+  };
+}
+
+(async () => { if (url && anon) { client(); const { data: { session } } = await sb.auth.getSession(); if (session) start(); } })();
+</script>
+</body>
+</html>
